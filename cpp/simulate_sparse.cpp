@@ -6,6 +6,7 @@
 #include <map>
 #include <queue>
 #include <set>
+#include <limits>
 #include <vector>
 #include "city.h"
 
@@ -14,92 +15,6 @@ using namespace std;
 typedef Eigen::SparseMatrix<double,RowMajor> SpMat;
 typedef Eigen::SparseMatrix<double,ColMajor> SpMatc;
 typedef Eigen::Triplet<double> Tp;
-
-void read(vector<Tp>& A_in_triplets, char* filename)
-{
-	ifstream f(filename);
-	long num=0;
-	long i,j;
-	clock_t st = clock();
-    long maxn=0;
-	long maxm=0;
-	while (!f.eof()){
-		f>>i;
-		if (f.eof()) break;
-		f>>j;
-		if (f.eof()) break;
-		num++;
-		A_in_triplets.push_back(Tp(i,j,1));
-		if (num-long(num/1000000)*1000000==0)
-		{
-			cout<<"Reading "<<num<<": "<<i<<' '<<j<<" 1"<<endl;
-		}
-		if (i>maxn)
-			maxn=i;
-		if (j>maxm)
-			maxm=j;
-	}
-	cout<<"maxn="<<maxn<<endl;
-	cout<<"maxm="<<maxm<<endl;
-	clock_t end = clock();
-	cout<<"reading file time: "<<double(end-st)/CLOCKS_PER_SEC<<endl;
-}
-
-void construct_support(vector<Tp> & A_in_triplets, vector<set<int> > & Omega, int N, int T, int C, SpMat & X){
-	for (int i=0;i<A_in_triplets.size(); i++){
-		int x=A_in_triplets[i].row();
-		int y=A_in_triplets[i].col();
-		Omega[x*T+y/C].insert(y);
-	}
-	/*
-	 * loop through time t \in [T],
-	 * then loop through users \in [N], do
-	 * 1) record the users that doesn't have any info at this time
-	 * 2) meanwhile, make a set that includes all the locations that are visited in this time
-	 * Afterwards, go to the missing users, and link the user to the visited place */
-	for (int t=0;t<T; t++)
-	{
-		vector<int> empty_users;
-		set<int> visited_cat;
-		for (int i=0;i<N;i++){
-			int ind=i*T+t;
-			if (Omega[ind].empty())
-				empty_users.push_back(i);
-			else{
-				for (auto j:Omega[ind]){
-					visited_cat.insert(j%C);
-				}
-			}
-		}
-		int s=visited_cat.size();
-		for (int i=0;i<empty_users.size();i++){
-			int ind=empty_users[i]*T+t;
-			for (auto c:visited_cat){
-				Omega[ind].insert(c+t*C);
-				A_in_triplets.push_back(Tp(empty_users[i],t*C+c,1.0/s));
-				if (t*C+c>T*C)
-				{
-					cout<<"t="<<t<<endl;
-					cout<<"c="<<c<<endl;
-					cout<<"n="<<empty_users[i];
-					exit(0);
-				}
-
-			}
-		}
-	}
-
-
-	/*for (int i=0; i<Omega.size();i++)
-		if (Omega[i].empty()){
-			for (int j=i%T*C;j<(i%T+1)*C;j++){
-				Omega[i].insert(j);
-				A_in_triplets.push_back(Tp(int(i/T), j,1.0/C));
-			}
-		}*/
-	cout<<"nnz of input matrix is: "<<A_in_triplets.size()<<endl;
-	X.setFromTriplets(A_in_triplets.begin(), A_in_triplets.end());
-}
 
 void GS_QR(MatrixXd &Q, const MatrixXd & Y){
 	double a;
@@ -367,14 +282,14 @@ void model(SpMat & X, int iter, int N, int T, int C, int K, vector<set<int>> & O
 			}
 		}
 		cout<<"Finished simplex projection, used "<<(clock()-st)/CLOCKS_PER_SEC<<" seconds"<<endl;
-		cout<<std::setprecision(3)<<"Iteration "<<j<<": error="<<diff<<", accuracy="<<correct*1.0/nnz<<endl;
+		cout<<"Iteration "<<j<<": error="<<diff<<", accuracy="<<correct*1.0/nnz<<endl;
 	}
 }
 
 
 int generate_data(int N, int T, int C, vector<int> & groundTruth, SpMat & X, vector<set<int>> & Omega, int k)
 {
-	p=4;
+	int p=4;
 	vector<vector<int>>  cat(10,vector<int>(10,0));
 	vector<Tp> A_in_triplets;
 	for (int i=0;i<10;i++)
@@ -390,12 +305,12 @@ int generate_data(int N, int T, int C, vector<int> & groundTruth, SpMat & X, vec
 					nonzeros.insert(x*T+t);
 					int y=cat[i][t%10]+t*C;
 					groundTruth[x*T+t]=y;
-					A_in_triplets.push_back(Tp(x,y,0.25));
+					A_in_triplets.push_back(Tp(x,y,1.0/p));
 					for (int s=1;s<p;s++){
 						int a=rand()%C+t*C;
-						while (a!=y)
+						while (a==y)
 							a=rand()%C+t*C;
-						A_in_triplets.push_back(Tp(x,a,0.25));
+						A_in_triplets.push_back(Tp(x,a,1.0/p));
 						Omega[x*T+t].insert(a);
 					}
 					Omega[x*T+t].insert(y);
@@ -428,9 +343,8 @@ int main(int argc, char* argv[]){
 	cout<<A.rows()<<endl;
 	int nnz=generate_data(N, T, C, groundTruth, A, Omega, k);
 	cout<<"Finish initialization with the observed matrix!"<<endl;
+	cout.precision(3);
 	model(A,iter,N,T,C,r,Omega,groundTruth,nnz);
-	cout<<"k="<<k<<endl;
-	cout<<"k="<<k<<endl;
 	/*ofstream of("output.csv");
 	for (int i=0;i<N;i++)
 		for (SparseMatrix<double, RowMajor>::InnerIterator it(X,i); it; ++it)
