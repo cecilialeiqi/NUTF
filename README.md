@@ -14,6 +14,8 @@ Compile training file:
 make train
 
 ```
+./train N T C r iter
+e.g.:
 ./train test.txt 14 6 3 5 5
 ```
 
